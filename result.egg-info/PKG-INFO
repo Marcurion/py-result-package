@@ -1,0 +1,27 @@
+Metadata-Version: 2.1
+Name: result
+Version: 0.9.1
+Summary: Implementation of the Result pattern similar to C# ErrorOr package
+Home-page: 
+Author: Marcurion
+Author-email: marcurion@private
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.12.3
+Description-Content-Type: text/markdown
+
+Simple implementation of the Result pattern similar to ErrorOr in C#. Using type safety and generics in Python.
+
+Use like this:
+
+@staticmethod
+def use_method() -> Result[int]:
+    res: Result[int] = return_int_or_error()
+
+    if res.failure: 
+        print("Oh no")
+        return res
+    else: 
+        print("Oh yes")
+        return Result.ok(res.value + 1)
