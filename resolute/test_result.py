@@ -2,27 +2,27 @@ import pytest
 import traceback
 from typing import List
 
-from result import Result
+from .resolute import Resolute
 
-def results_in_int() -> Result[int]:
-    res : Result[int] = Result.from_value(1)
+def results_in_int() -> Resolute[int]:
+    res : Resolute[int] = Resolute.from_value(1)
     return res
 
-def results_in_float() -> Result[float]:
-    int_result: Result[int] = results_in_int() # Mypy needed to hint at the issue of returning this directly
+def results_in_float() -> Resolute[float]:
+    int_result: Resolute[int] = results_in_int() # Mypy needed to hint at the issue of returning this directly
     if int_result.has_errors: return int_result.generic_error_typed()
     # Else continue with business logic
-    return Result.type_adjusted(int_result, lambda value: float(str(value)) ) # Lamda needs to consider possibility of None value
+    return Resolute.type_adjusted(int_result, lambda value: float(str(value))) # Lamda needs to consider possibility of None value
 
-def results_in_none() -> Result[None]:
-    return Result.from_value(None)
+def results_in_none() -> Resolute[None]:
+    return Resolute.from_value(None)
 
-def results_in_list() -> Result[List[int]]:
+def results_in_list() -> Resolute[List[int]]:
     listing = [1,2,3]
-    return Result.from_value(listing)
+    return Resolute.from_value(listing)
 
 def test_init():
-    success_with_value : Result[str] = Result.from_value("Hello")  # type: ignore
+    success_with_value : Resolute[str] = Resolute.from_value("Hello")  # type: ignore
 
     assert success_with_value.value == "Hello"
     assert success_with_value.has_value == True
@@ -30,7 +30,7 @@ def test_init():
     assert success_with_value.value_is_of_type(str) == True
     assert success_with_value.is_success == True
 
-    failure : Result[str] = Result.from_error("My error message")  # type: ignore
+    failure : Resolute[str] = Resolute.from_error("My error message")  # type: ignore
     assert failure.has_value == False
     assert failure.has_errors == True
     assert len(failure.errors) == 1
@@ -77,7 +77,7 @@ def test_init():
     assert results_in_none()._type == type(None)
 
     # success_with_value.value = 2 # TODO: Setter for value
-    success_without_value = Result.from_success_with_no_value() # same as Result.from_value(None)
+    success_without_value = Resolute.from_success_with_no_value() # same as Result.from_value(None)
     assert success_without_value.has_value == False
     assert success_without_value.has_errors == False
     assert success_without_value.value is None
@@ -90,9 +90,9 @@ def test_init():
     #assert results_in_list().value_is_of_type(List[int]) == True # Generic types are flattened at runtime
     assert results_in_list().value_is_of_type(List) == True
 
-    failure_collection = [Result.from_error("Err1"), Result.from_error(ValueError("Incorrect Value")), Result.from_errors(["Err2", "Err3", ZeroDivisionError()])]
-    assert Result.any_erroneous_in_list(failure_collection)
-    failure_from_collection = Result.from_erroneous_list(failure_collection)
+    failure_collection = [Resolute.from_error("Err1"), Resolute.from_error(ValueError("Incorrect Value")), Resolute.from_errors(["Err2", "Err3", ZeroDivisionError()])]
+    assert Resolute.any_erroneous_in_list(failure_collection)
+    failure_from_collection = Resolute.from_erroneous_list(failure_collection)
     assert failure_from_collection.has_value == False
     assert failure_from_collection.is_success == False
     assert failure_from_collection.has_errors == True
@@ -108,7 +108,7 @@ def test_init():
         1 / 0
     except:
         #traceback.print_exc()
-        converted_exception = Result.from_error(traceback.format_exc())
+        converted_exception = Resolute.from_error(traceback.format_exc())
         assert len(converted_exception.concat_errors()) > 25 # Has exception details
 
 

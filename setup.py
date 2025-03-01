@@ -1,14 +1,14 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="result",            # Your package name
-    version="0.9.1",                # Version of the package
+    name="resolute",            # Your package name
+    version="0.9.2",                # Version of the package
     author="Marcurion",           # Author name
     author_email="marcurion@private",  # Author email
     description="Implementation of the Result pattern similar to C# ErrorOr package",
     long_description=open('README.md').read(),  # Optional: read from README.md
     long_description_content_type='text/markdown',  # Specify markdown if used
-    url="",    # Optional: Project's URL, if available
+    url="https://github.com/Marcurion/py-result-package",    # Optional: Project's URL, if available
     packages=find_packages(),     # Automatically find packages in this directory
     install_requires=[],          # List of dependencies (can leave empty for local use)
     classifiers=[
