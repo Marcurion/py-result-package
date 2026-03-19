@@ -36,6 +36,11 @@ class Resolute(Generic[T]):
         return self._value
 
     @property
+    def _(self) -> T | None:
+        """Alias for .value."""
+        return self.value
+
+    @property
     def errors(self) -> List[Union[Exception, str]]:
         """Error message detailing why the operation failed."""
         if self._success:
@@ -83,24 +88,24 @@ class Resolute(Generic[T]):
         return str(self)
 
     @classmethod
-    def from_errors(cls, errors: List[Union[str, Exception]]) -> "Resolute[T]":
+    def from_errors(cls, errors: List[Union[str, Exception]]) -> "Failure[T]":
         """Create a Result object for a failed operation. With multiple error information"""
-        return cls(False, errors=errors)
+        return Failure(False, errors=errors)
 
     @classmethod
-    def from_error(cls, error: Union[str, Exception]) -> "Resolute[T]":
+    def from_error(cls, error: Union[str, Exception]) -> "Failure[T]":
         """Create a Result object for a failed operation."""
-        return cls(False, errors=[error])
+        return Failure(False, errors=[error])
 
     @classmethod
-    def from_value(cls, value: T) -> "Resolute[T]":
+    def from_value(cls, value: T) -> "Success[T]":
         """Create a Result object for a successful operation with value."""
-        return cls(True, value)
+        return Success(True, value)
 
     @classmethod
-    def from_success_with_no_value(cls) -> "Resolute[T]":
+    def from_success_with_no_value(cls) -> "Success[T]":
         """Create a Result object for a successful operation without value."""
-        return cls(True, None)
+        return Success(True, None)
 
     U = TypeVar("U")
 
@@ -143,3 +148,17 @@ class Resolute(Generic[T]):
             if collection_item.has_errors:
                 all_errors.extend(collection_item.errors)
         return Resolute.from_errors(all_errors)
+
+
+class Success(Resolute[T]):
+    @property
+    def value(self) -> T:
+        return self._value  # type: ignore[return-value]
+
+    @property
+    def _(self) -> T:
+        return self._value  # type: ignore[return-value]
+
+
+class Failure(Resolute[T]):
+    pass

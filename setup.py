@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="resolute",            # Your package name
-    version="0.9.3",                # Version of the package
+    version="1.0.0",                # Version of the package
     author="Marcurion",           # Author name
     author_email="marcurion@private.com",  # Author email
     description="Implementation of the Result pattern similar to C# ErrorOr package",
