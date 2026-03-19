@@ -1,8 +1,10 @@
+from pickletools import read_uint2
+
 import pytest
 import traceback
 from typing import List
 
-from .resolute import Resolute
+from resolute import Resolute
 
 def results_in_int() -> Resolute[int]:
     res : Resolute[int] = Resolute.from_value(1)
@@ -111,4 +113,17 @@ def test_init():
         converted_exception = Resolute.from_error(traceback.format_exc())
         assert len(converted_exception.concat_errors()) > 25 # Has exception details
 
+    from resolute import Result, has_errors, is_success, Success
+    res: Result[int] = Resolute.from_value(1)
+    res2: Result = Resolute.from_error("Error")
+    res3: Result[int] = Resolute.from_error("Error")
+    assert res2.is_success == False
+    assert res3.has_errors
+    assert has_errors(res3)
+    assert is_success(res)
+    assert isinstance(res.value, int)
+    assert type(res) == Success
 
+
+test_init()
+print("All tests passed")
