@@ -1,5 +1,5 @@
 
-from typing import Generic, TypeVar, Union, List, Callable
+from typing import Generic, TypeVar, Union, List, Callable, TypeIs
 
 T = TypeVar("T")
 
@@ -150,6 +150,16 @@ class Resolute(Generic[T]):
         return Resolute.from_errors(all_errors)
 
 
+def is_success(res: Resolute[T]) -> TypeIs["Success[T]"]:
+    """Type guard: narrows Resolute[T] to Success[T] when True."""
+    return res._success
+
+
+def has_errors(res: Resolute[T]) -> TypeIs["Failure[T]"]:
+    """Type guard: narrows Resolute[T] to Failure[T] when True."""
+    return not res._success
+
+
 class Success(Resolute[T]):
     @property
     def value(self) -> T:
@@ -162,3 +172,6 @@ class Success(Resolute[T]):
 
 class Failure(Resolute[T]):
     pass
+
+
+type Result[T] = Success[T] | Failure[T]
