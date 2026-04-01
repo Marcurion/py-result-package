@@ -4,14 +4,14 @@ import pytest
 import traceback
 from typing import List
 
-from resolute import Resolute
+from resolute import Resolute, Result
 
-def results_in_int() -> Resolute[int]:
-    res : Resolute[int] = Resolute.from_value(1)
+def results_in_int() -> Result[int]:
+    res : Result[int] = Resolute.from_value(1)
     return res
 
-def results_in_float() -> Resolute[float]:
-    int_result: Resolute[int] = results_in_int() # Mypy needed to hint at the issue of returning this directly
+def results_in_float() -> Result[float]:
+    int_result: Result[int] = results_in_int() # Mypy needed to hint at the issue of returning this directly
     if int_result.has_errors: return int_result.generic_error_typed()
     # Else continue with business logic
     return Resolute.type_adjusted(int_result, lambda value: float(str(value))) # Lamda needs to consider possibility of None value

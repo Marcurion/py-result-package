@@ -1,5 +1,5 @@
 
-from typing import Generic, TypeVar, Union, List, Callable, TypeIs, Awaitable
+from typing import Any, Generic, TypeVar, Union, List, Callable, TypeIs, Awaitable
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -248,7 +248,7 @@ class Resolute(Generic[T]):
         return Success(True, None)
 
     @staticmethod
-    def type_adjusted(source: "Resolute[T]", value_converter: Callable[[T | None], U]) -> "Resolute[U]":
+    def type_adjusted(source: "Resolute[T]", value_converter: Callable[[T | None], U]) -> "Success[U] | Failure[U]":
         if source.is_success and source.has_value:
             try:
                 return Resolute.from_value(value_converter(source.value))
@@ -259,13 +259,13 @@ class Resolute(Generic[T]):
 
 
     @staticmethod
-    def type_erroneous(source: "Resolute[T]") -> "Resolute[U]":
+    def type_erroneous(source: "Resolute[T]") -> "Failure[Any]":
         if source.is_success:
             raise ValueError("This method should only be called on Results with errors, ensure proper checks upfront or consider using type_adjusted() and provide value_converter method")
         else:
             return Resolute.from_errors(source.errors)
 
-    def generic_error_typed(self: "Resolute[T]") -> "Resolute[U]":
+    def generic_error_typed(self: "Resolute[T]") -> "Failure[Any]":
         return Resolute.type_erroneous(self)
 
 
