@@ -127,3 +127,212 @@ def test_init():
 
 test_init()
 print("All tests passed")
+
+
+# =============================================================================
+# Functional programming method tests
+# =============================================================================
+
+import asyncio
+
+
+# --- map ---
+
+def test_map():
+    assert Resolute.from_value(2).map(lambda x: x * 3).value == 6
+    assert Resolute.from_value("3").map(int).value == 3
+    assert Resolute.from_error("bad").map(lambda x: x * 3).has_errors
+    assert Resolute.from_value("abc").map(int).has_errors  # fn raises ValueError
+
+
+# --- async_map ---
+
+def test_async_map():
+    async def double(x: int) -> int:
+        return x * 2
+
+    async def run():
+        assert (await Resolute.from_value(3).async_map(double)).value == 6
+        assert (await Resolute.from_error("bad").async_map(double)).has_errors
+
+    asyncio.run(run())
+
+
+# --- map_err ---
+
+def test_map_err():
+    result = Resolute.from_error("low-level error").map_err(lambda es: [f"domain: {es[0]}"])
+    assert result.errors == ["domain: low-level error"]
+    assert Resolute.from_value(1).map_err(lambda es: ["x"]).value == 1
+
+
+# --- and_then ---
+
+def test_and_then():
+    def parse_int(s: str) -> Resolute:
+        try:
+            return Resolute.from_value(int(s))
+        except ValueError as e:
+            return Resolute.from_error(e)
+
+    assert Resolute.from_value("42").and_then(parse_int).value == 42
+    assert Resolute.from_value("bad").and_then(parse_int).has_errors
+    assert Resolute.from_error("upstream").and_then(parse_int).has_errors
+
+
+# --- async_and_then ---
+
+def test_async_and_then():
+    async def fetch_user(user_id: int) -> Resolute:
+        if user_id > 0:
+            return Resolute.from_value(f"user:{user_id}")
+        return Resolute.from_error("invalid id")
+
+    async def run():
+        r = await Resolute.from_value(1).async_and_then(fetch_user)
+        assert r.value == "user:1"
+
+        r = await Resolute.from_value(-1).async_and_then(fetch_user)
+        assert r.has_errors
+
+        r = await Resolute.from_error("upstream").async_and_then(fetch_user)
+        assert r.has_errors
+
+    asyncio.run(run())
+
+
+# --- fold ---
+
+def test_fold():
+    msg = Resolute.from_value(5).fold(lambda es: "err", lambda v: f"ok:{v}")
+    assert msg == "ok:5"
+
+    msg = Resolute.from_error("oops").fold(lambda es: f"failed:{es[0]}", lambda v: "ok")
+    assert msg == "failed:oops"
+
+
+# --- unwrap_or ---
+
+def test_unwrap_or():
+    assert Resolute.from_value(10).unwrap_or(0) == 10
+    assert Resolute.from_error("fail").unwrap_or(0) == 0
+
+
+# --- unwrap_or_else ---
+
+def test_unwrap_or_else():
+    assert Resolute.from_value(10).unwrap_or_else(lambda es: -1) == 10
+    assert Resolute.from_error("oops").unwrap_or_else(lambda es: len(es)) == 1
+
+
+# --- async_unwrap_or_else ---
+
+def test_async_unwrap_or_else():
+    async def fetch_default(errors: list) -> int:
+        return -1
+
+    async def run():
+        assert (await Resolute.from_value(10).async_unwrap_or_else(fetch_default)) == 10
+        assert (await Resolute.from_error("oops").async_unwrap_or_else(fetch_default)) == -1
+
+    asyncio.run(run())
+
+
+# --- inspect / inspect_err ---
+
+def test_inspect():
+    log = []
+    result = Resolute.from_value(7).inspect(lambda v: log.append(v))
+    assert log == [7]
+    assert result.value == 7
+
+    log = []
+    result = Resolute.from_error("e").inspect_err(lambda es: log.extend(es))
+    assert log == ["e"]
+    assert result.has_errors
+
+    log = []
+    Resolute.from_error("e").inspect(lambda v: log.append(v))
+    assert log == []
+
+    log = []
+    Resolute.from_value(1).inspect_err(lambda es: log.extend(es))
+    assert log == []
+
+
+# --- filter ---
+
+def test_filter():
+    assert Resolute.from_value(5).filter(lambda x: x > 0, "must be positive").value == 5
+    assert Resolute.from_value(-1).filter(lambda x: x > 0, "must be positive").has_errors
+    assert Resolute.from_error("upstream").filter(lambda x: x > 0, "irrelevant").has_errors
+
+
+# --- async_filter ---
+
+def test_async_filter():
+    async def is_available(name: str) -> bool:
+        return name != "taken"
+
+    async def run():
+        r = await Resolute.from_value("free").async_filter(is_available, "name taken")
+        assert r.value == "free"
+
+        r = await Resolute.from_value("taken").async_filter(is_available, "name taken")
+        assert r.has_errors
+
+        r = await Resolute.from_error("upstream").async_filter(is_available, "irrelevant")
+        assert r.has_errors
+
+    asyncio.run(run())
+
+
+# --- zip ---
+
+def test_zip():
+    r = Resolute.zip(Resolute.from_value(1), Resolute.from_value("a"))
+    assert r.value == (1, "a")
+
+    r = Resolute.zip(Resolute.from_error("x"), Resolute.from_value(2))
+    assert r.has_errors
+
+    r = Resolute.zip(Resolute.from_error("x"), Resolute.from_error("y"))
+    assert len(r.errors) == 2
+
+
+# --- sequence ---
+
+def test_sequence():
+    r = Resolute.sequence([Resolute.from_value(1), Resolute.from_value(2)])
+    assert r.value == [1, 2]
+
+    r = Resolute.sequence([Resolute.from_value(1), Resolute.from_error("bad")])
+    assert r.has_errors
+
+    r = Resolute.sequence([Resolute.from_error("a"), Resolute.from_error("b")])
+    assert len(r.errors) == 2
+
+    r = Resolute.sequence([])
+    assert r.value == []
+
+
+# --- from_call ---
+
+def test_from_call():
+    assert Resolute.from_call(lambda: int("42")).value == 42
+    assert Resolute.from_call(lambda: int("bad")).has_errors
+    assert Resolute.from_call(lambda: int("bad")).contains_error_type(ValueError)
+
+
+# --- from_async_call ---
+
+def test_from_async_call():
+    async def boom():
+        raise ValueError("network error")
+
+    async def run():
+        r = await Resolute.from_async_call(boom)
+        assert r.has_errors
+        assert r.contains_error_type(ValueError)
+
+    asyncio.run(run())
