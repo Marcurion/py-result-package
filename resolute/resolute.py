@@ -60,14 +60,14 @@ class Resolute(Generic[T]):
         #assert isinstance(self._errors, List[Union[str, Exception]])
         return separator.join(str(error) for error in self._errors)
 
-    def with_errors(self, errors: List[Union[Exception, str]]) -> "Resolute[T]":
+    def with_errors(self, errors: List[Union[Exception, str]]) -> "Failure[T]":
         if self._success:
-            return Resolute(False, value=self.value, errors=errors)
+            return Failure(False, value=self.value, errors=errors)
         else:
             self._errors += errors
-            return self
+            return self  # type: ignore[return-value]
 
-    def with_error(self, error: Union[Exception, str]) -> "Resolute[T]":
+    def with_error(self, error: Union[Exception, str]) -> "Failure[T]":
         return self.with_errors([error])
 
     def contains_error_type(self, error_type: type) -> bool:
@@ -85,7 +85,7 @@ class Resolute(Generic[T]):
     # Functional programming methods
     # -------------------------------------------------------------------------
 
-    def map(self, fn: Callable[[T], U]) -> "Resolute[U]":
+    def map(self, fn: Callable[[T], U]) -> "Success[U] | Failure[U]":
         """Transform the success value; pass failures through unchanged."""
         if not self._success:
             return self  # type: ignore[return-value]
@@ -94,7 +94,7 @@ class Resolute(Generic[T]):
         except Exception as e:
             return Resolute.from_error(e)
 
-    async def async_map(self, fn: Callable[[T], Awaitable[U]]) -> "Resolute[U]":
+    async def async_map(self, fn: Callable[[T], Awaitable[U]]) -> "Success[U] | Failure[U]":
         """Async variant of map."""
         if not self._success:
             return self  # type: ignore[return-value]
@@ -103,19 +103,19 @@ class Resolute(Generic[T]):
         except Exception as e:
             return Resolute.from_error(e)
 
-    def map_err(self, fn: Callable[[List[Union[Exception, str]]], List[Union[Exception, str]]]) -> "Resolute[T]":
+    def map_err(self, fn: Callable[[List[Union[Exception, str]]], List[Union[Exception, str]]]) -> "Success[T] | Failure[T]":
         """Transform the error list; pass successes through unchanged."""
         if self._success:
-            return self
+            return self  # type: ignore[return-value]
         return Resolute.from_errors(fn(self._errors))
 
-    def and_then(self, fn: Callable[[T], "Resolute[U]"]) -> "Resolute[U]":
+    def and_then(self, fn: Callable[[T], "Success[U] | Failure[U]"]) -> "Success[U] | Failure[U]":
         """Chain a fallible operation (flatmap); pass failures through unchanged."""
         if not self._success:
             return self  # type: ignore[return-value]
         return fn(self._value)  # type: ignore[arg-type]
 
-    async def async_and_then(self, fn: Callable[[T], Awaitable["Resolute[U]"]]) -> "Resolute[U]":
+    async def async_and_then(self, fn: Callable[[T], Awaitable["Success[U] | Failure[U]"]]) -> "Success[U] | Failure[U]":
         """Async variant of and_then."""
         if not self._success:
             return self  # type: ignore[return-value]
@@ -145,36 +145,36 @@ class Resolute(Generic[T]):
             return self._value  # type: ignore[return-value]
         return await fn(self._errors)
 
-    def inspect(self, fn: Callable[[T], None]) -> "Resolute[T]":
+    def inspect(self, fn: Callable[[T], None]) -> "Success[T] | Failure[T]":
         """Call fn(value) for side effects on success; always return self."""
         if self._success:
             fn(self._value)  # type: ignore[arg-type]
-        return self
+        return self  # type: ignore[return-value]
 
-    def inspect_err(self, fn: Callable[[List[Union[Exception, str]]], None]) -> "Resolute[T]":
+    def inspect_err(self, fn: Callable[[List[Union[Exception, str]]], None]) -> "Success[T] | Failure[T]":
         """Call fn(errors) for side effects on failure; always return self."""
         if not self._success:
             fn(self._errors)
-        return self
+        return self  # type: ignore[return-value]
 
-    def filter(self, predicate: Callable[[T], bool], error: Union[Exception, str]) -> "Resolute[T]":
+    def filter(self, predicate: Callable[[T], bool], error: Union[Exception, str]) -> "Success[T] | Failure[T]":
         """Conditionally fail a success if the predicate returns False."""
         if not self._success:
-            return self
+            return self  # type: ignore[return-value]
         if predicate(self._value):  # type: ignore[arg-type]
-            return self
+            return self  # type: ignore[return-value]
         return Resolute.from_error(error)
 
-    async def async_filter(self, predicate: Callable[[T], Awaitable[bool]], error: Union[Exception, str]) -> "Resolute[T]":
+    async def async_filter(self, predicate: Callable[[T], Awaitable[bool]], error: Union[Exception, str]) -> "Success[T] | Failure[T]":
         """Async variant of filter."""
         if not self._success:
-            return self
+            return self  # type: ignore[return-value]
         if await predicate(self._value):  # type: ignore[arg-type]
-            return self
+            return self  # type: ignore[return-value]
         return Resolute.from_error(error)
 
     @classmethod
-    def zip(cls, a: "Resolute[A]", b: "Resolute[B]") -> "Resolute[tuple]":
+    def zip(cls, a: "Resolute[A]", b: "Resolute[B]") -> "Success[tuple] | Failure[tuple]":
         """Combine two results into a tuple; aggregate errors if either fails."""
         if a._success and b._success:
             return cls.from_value((a._value, b._value))
@@ -186,7 +186,7 @@ class Resolute(Generic[T]):
         return cls.from_errors(all_errors)
 
     @classmethod
-    def sequence(cls, results: List["Resolute[T]"]) -> "Resolute[List[T]]":
+    def sequence(cls, results: List["Resolute[T]"]) -> "Success[List[T]] | Failure[List[T]]":
         """Collect a list of results into a result of a list; aggregate all errors on failure."""
         if not results:
             return cls.from_value([])
@@ -199,7 +199,7 @@ class Resolute(Generic[T]):
         return cls.from_value([r._value for r in results])  # type: ignore[misc]
 
     @classmethod
-    def from_call(cls, fn: Callable[[], T]) -> "Resolute[T]":
+    def from_call(cls, fn: Callable[[], T]) -> "Success[T] | Failure[T]":
         """Wrap a callable that may raise; returns Success or Failure."""
         try:
             return cls.from_value(fn())
@@ -207,7 +207,7 @@ class Resolute(Generic[T]):
             return cls.from_error(e)
 
     @classmethod
-    async def from_async_call(cls, fn: Callable[[], Awaitable[T]]) -> "Resolute[T]":
+    async def from_async_call(cls, fn: Callable[[], Awaitable[T]]) -> "Success[T] | Failure[T]":
         """Wrap an async callable that may raise; returns Success or Failure."""
         try:
             return cls.from_value(await fn())
