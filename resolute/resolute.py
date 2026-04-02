@@ -177,26 +177,26 @@ class Resolute(Generic[T]):
     def zip(cls, a: "Resolute[A]", b: "Resolute[B]") -> "Success[tuple] | Failure[tuple]":
         """Combine two results into a tuple; aggregate errors if either fails."""
         if a._success and b._success:
-            return cls.from_value((a._value, b._value))
+            return cls.from_value((a._value, b._value)) # type: ignore[return-value, arg-type]
         all_errors: List[Union[Exception, str]] = []
         if not a._success:
             all_errors.extend(a._errors)
         if not b._success:
             all_errors.extend(b._errors)
-        return cls.from_errors(all_errors)
+        return cls.from_errors(all_errors) # type: ignore[return-value]
 
     @classmethod
     def sequence(cls, results: List["Resolute[T]"]) -> "Success[List[T]] | Failure[List[T]]":
         """Collect a list of results into a result of a list; aggregate all errors on failure."""
         if not results:
-            return cls.from_value([])
+            return cls.from_value([]) # type: ignore[return-value, arg-type]
         all_errors: List[Union[Exception, str]] = []
         for r in results:
             if not r._success:
                 all_errors.extend(r._errors)
         if all_errors:
-            return cls.from_errors(all_errors)
-        return cls.from_value([r._value for r in results])  # type: ignore[misc]
+            return cls.from_errors(all_errors) # type: ignore[return-value]
+        return cls.from_value([r._value for r in results])  # type: ignore[return-value, arg-type]
 
     @classmethod
     def from_call(cls, fn: Callable[[], T]) -> "Success[T] | Failure[T]":
