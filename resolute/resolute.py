@@ -173,6 +173,26 @@ class Resolute(Generic[T]):
             return self  # type: ignore[return-value]
         return Resolute.from_error(error)
 
+    def remove_errors_of_type(self, types: List[type], fallback: Union[Exception, str] = "Errors anonymized") -> "Success[T] | Failure[T]":
+        """Remove errors whose type matches any entry in types.
+        If any errors were removed, fallback is appended to signal that information was redacted."""
+        if self._success:
+            return self  # type: ignore[return-value]
+        filtered = [e for e in self._errors if not isinstance(e, tuple(types))]
+        if len(filtered) < len(self._errors):
+            filtered.append(fallback)
+        return Failure(False, errors=filtered)
+
+    def remove_errors_except_of_type(self, types: List[type], fallback: Union[Exception, str] = "Errors anonymized") -> "Success[T] | Failure[T]":
+        """Keep only errors whose type matches any entry in types; remove all others.
+        If any errors were removed, fallback is appended to signal that information was redacted."""
+        if self._success:
+            return self  # type: ignore[return-value]
+        filtered = [e for e in self._errors if isinstance(e, tuple(types))]
+        if len(filtered) < len(self._errors):
+            filtered.append(fallback)
+        return Failure(False, errors=filtered)
+
     @classmethod
     def zip(cls, a: "Resolute[A]", b: "Resolute[B]") -> "Success[tuple] | Failure[tuple]":
         """Combine two results into a tuple; aggregate errors if either fails."""

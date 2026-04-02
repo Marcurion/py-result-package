@@ -338,3 +338,82 @@ def test_from_async_call():
         assert r.contains_error_type(ValueError)
 
     asyncio.run(run())
+
+
+# --- remove_errors_of_type / remove_errors_except_of_type ---
+
+def test_remove_errors_of_type():
+    class InfraError(Exception):
+        pass
+
+    result: Result = Resolute.from_errors([InfraError("db connection refused"), "user not found", ValueError("bad input")])
+
+    # removes InfraError, fallback appended because errors were reduced
+    sanitized = result.remove_errors_of_type([InfraError])
+    assert sanitized.has_errors
+    assert len(sanitized.errors) == 3  # "user not found", ValueError, fallback
+    assert not sanitized.contains_error_type(InfraError)
+    assert sanitized.contains_error_type(ValueError)
+    assert sanitized.errors[-1] == "Errors anonymized"
+
+    # removes multiple types, fallback appended
+    sanitized2 = result.remove_errors_of_type([InfraError, ValueError])
+    assert len(sanitized2.errors) == 2  # "user not found", fallback
+    assert sanitized2.errors[0] == "user not found"
+    assert sanitized2.errors[-1] == "Errors anonymized"
+
+    # all errors removed -> only fallback remains
+    all_removed = result.remove_errors_of_type([InfraError, ValueError, str])
+    assert all_removed.has_errors
+    assert len(all_removed.errors) == 1
+    assert all_removed.errors[0] == "Errors anonymized"
+
+    # custom fallback
+    custom = result.remove_errors_of_type([InfraError], "Something went wrong")
+    assert custom.errors[-1] == "Something went wrong"
+
+    # no errors removed -> no fallback added
+    unchanged = result.remove_errors_of_type([KeyError])
+    assert len(unchanged.errors) == 3
+    assert not unchanged.contains_error_type(str) or unchanged.errors[-1] != "Errors anonymized"
+
+    # success passes through unchanged
+    assert Resolute.from_value(1).remove_errors_of_type([InfraError]).value == 1
+
+
+def test_remove_errors_except_of_type():
+    class InfraError(Exception):
+        pass
+
+    result: Result = Resolute.from_errors([InfraError("db down"), "user not found", ValueError("bad input")])
+
+    # keep only str errors, fallback appended because errors were reduced
+    sanitized = result.remove_errors_except_of_type([str])
+    assert sanitized.has_errors
+    assert len(sanitized.errors) == 2  # "user not found", fallback
+    assert sanitized.errors[0] == "user not found"
+    assert sanitized.errors[-1] == "Errors anonymized"
+
+    # keep multiple types, fallback appended
+    sanitized2 = result.remove_errors_except_of_type([str, ValueError])
+    assert len(sanitized2.errors) == 3  # "user not found", ValueError, fallback
+    assert not sanitized2.contains_error_type(InfraError)
+    assert sanitized2.errors[-1] == "Errors anonymized"
+
+    # nothing matches -> only fallback remains
+    none_match = result.remove_errors_except_of_type([KeyError])
+    assert none_match.has_errors
+    assert len(none_match.errors) == 1
+    assert none_match.errors[0] == "Errors anonymized"
+
+    # custom fallback
+    custom = result.remove_errors_except_of_type([KeyError], ValueError("redacted"))
+    assert custom.contains_error_type(ValueError)
+
+    # no errors removed -> no fallback added
+    unchanged = result.remove_errors_except_of_type([InfraError, str, ValueError])
+    assert len(unchanged.errors) == 3
+    assert unchanged.errors[-1] != "Errors anonymized"
+
+    # success passes through unchanged
+    assert Resolute.from_value(1).remove_errors_except_of_type([str]).value == 1
