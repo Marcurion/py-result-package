@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: resolute
-Version: 1.1.0
+Version: 1.1.2
 Summary: Implementation of the Result pattern similar to C# ErrorOr package
 Home-page: https://github.com/Marcurion/py-result-package
 Author: Marcurion
@@ -38,7 +38,7 @@ Imagine reading the following error history in your hexagon architecture project
 >
 >“NetworkError: TLS handshake refused, certificate mismatch, terminating connection… {Exception Details}“
 
-You will be able to immediately tell which operation failed, which path through your code-base was attempted and see technical failure details at the lowest level. 
+You will be able to immediately tell which operation failed, which path through your code-base was attempted and see technical failure details at the lowest level.
 
 You can construct your error histroy from generic strings or use typed error messages specifically for your domain, or pass in the exception classes we all already know.
 
@@ -65,9 +65,9 @@ Your application logic relies on the success of calls to (deeper) parts of the c
 
 
 ```python
-def business_logic() -> Resolute[float]:
+def business_logic() -> Result[float]:
 ...
-  current_res: Resolute[int] = Infrastructure.retrieve_count()
+  current_res: Result[int] = Infrastructure.retrieve_count()
   if current_res.has_errors: return current_res.generic_error_typed().with_error("I can't complete what I was about to do")
   # if not continue business as normal
 ...
@@ -77,25 +77,93 @@ Did we mention Resolute was created with Python's type system in mind? Detect po
 
 
 ```python
-def results_in_int() -> Resolute[int]:
+def results_in_int() -> Result[int]:
   return Resolute.from_value(3)
-def results_in_float() -> Resolute[float]:
-  int_res: Resolute[int] = results_in_int()
+def results_in_float() -> Result[float]:
+  int_res: Result[int] = results_in_int()
   if int_res.has_errors:
-    return int_res.generic_error_typed()           # : Resolute[float]
+    return int_res.generic_error_typed()           # : Result[float]
     # or
-    return Resolute.type_erroneous(int_res)         # : Resolute[float]
+    return Resolute.type_erroneous(int_res)         # : Result[float]
   # Else success
   # Lambda converter needs to consider possibility of None value
   return Resolute.type_adjusted(int_res, lambda value: float(str(value))*2.5 )
-def also_ress_in_float() -> Resolute[float]:
-  float_res: Resolute[float] = results_in_float()
+def also_ress_in_float() -> Result[float]:
+  float_res: Result[float] = results_in_float()
   if float_res.has_errors: return float_res       # No conversion necessary
   return Resolute.from_value(float_res.value * 2.5)
-def void_like_res() -> Resolute[None]:
-  float_res: Resolute[float] = results_in_float()
+def void_like_res() -> Result[None]:
+  float_res: Result[float] = results_in_float()
   if float_res.is_success: return Resolute.from_success_with_no_value()
 ``` 
+
+**Type guards and the `Result` union type**
+
+Resolute ships the `Result[T]` union type alias (`Success[T] | Failure[T]`) along with two type guard functions that let your type checker narrow a `Result[T]` to either branch without any extra casting.
+
+```python
+from resolute import Result, Success, Failure, is_success, has_errors
+
+res: Result[int] = Resolute.from_value(1)
+
+if is_success(res):
+    print(res.value)   # type checker knows res is Success[int] here
+
+if has_errors(res):
+    print(res.errors)  # type checker knows res is Failure[int] here
+```
+
+**Functional chaining**
+
+For code that passes results through several transformation steps, the functional methods let you express the pipeline without repeating `if has_errors: return` at every step.
+
+```python
+def parse_age(raw: str) -> Result[int]:
+    return (
+        Resolute.from_call(lambda: int(raw))
+            .filter(lambda n: n >= 0, "age must be non-negative")
+            .map(lambda n: n + 1)           # birthday!
+            .inspect(lambda n: print(f"age next year: {n}"))
+    )
+```
+
+Use `and_then` when the next step is itself fallible and returns a `Result`:
+
+```python
+def load_and_validate(path: str) -> Result[Config]:
+    return (
+        Resolute.from_call(lambda: open(path).read())
+            .and_then(parse_config)
+            .and_then(validate_config)
+            .map_err(lambda err_list: [f"config load failed: {err}" for err in err_list])
+    )
+```
+
+Terminate a chain by consuming both branches with `fold`, or extract the value with a fallback using `unwrap_or` / `unwrap_or_else`:
+
+```python
+message = result.fold(
+    on_failure=lambda errors: f"failed: {errors[0]}",
+    on_success=lambda value: f"ok: {value}",
+)
+
+value = result.unwrap_or(default_value)
+value = result.unwrap_or_else(lambda errors: compute_fallback(errors))
+```
+
+When combining multiple independent results, `zip` pairs two results into a tuple and `sequence` collects a list — both aggregate errors from all failing inputs rather than stopping at the first one:
+
+```python
+combined = Resolute.zip(fetch_user(id), fetch_account(id))
+if combined.is_success:
+    user, account = combined.value
+
+all_results = Resolute.sequence([validate_name(n), validate_age(a), validate_email(e)])
+if all_results.has_errors:
+    return all_results.generic_error_typed()
+```
+
+All of the above methods have `async_` counterparts (`async_map`, `async_and_then`, `async_filter`, `async_unwrap_or_else`, `from_async_call`) that work identically inside `async def` functions.
 
 More complex example from a layered architecture:
 
@@ -103,14 +171,14 @@ More complex example from a layered architecture:
 ```python
 ...
 # Presentation layer
-earliest_book_availability_res: Resolute[datetime] = reservation_service.calculate_book_availability(book_uuid)
+earliest_book_availability_res: Result[datetime] = reservation_service.calculate_book_availability(book_uuid)
 if earliest_book_availability_res.has_errors: modal_manager.ShowError(earliest_book_availability_res.concat_errors())
 ...
 ...
 # Application layer
-def calculate_book_availability(book_uuid: str) -> Resolute[datetime]:
+def calculate_book_availability(book_uuid: str) -> Result[datetime]:
   # Get dependencies
-  results: List[Resolute] = await asyncio.gather(
+  results: List[Result] = await asyncio.gather(
         async_check_if_book_is_in_store(book_uuid),
         async_get_return_date_of_last_borrower(book_uuid),
         async_get_waiting_list_for_book(book_uuid)
@@ -119,16 +187,16 @@ def calculate_book_availability(book_uuid: str) -> Resolute[datetime]:
   if Resolute.any_erroneous_in_list(results):
     return Resolute.from_erroneous_list(results) # Optional: .with_error("Availability calculation failed")
   # Typing
-  in_store_res: Resolute[bool]
-  last_borrower_returned_res: Resolute[datetime]
-  waiting_list_res: Resolute[List[User]]
+  in_store_res: Result[bool]
+  last_borrower_returned_res: Result[datetime]
+  waiting_list_res: Result[List[User]]
   # Unpacking
   in_store_res, last_borrower_returned_res, waiting_list_res = results
   # Continue with business logic
 ...
 ...
 # Infrastructure layer (using SQLAlchemy)
-def retrieve_waiting_list_for_book_from_db(book_uuid: str) -> Resolute[List[User]]:
+def retrieve_waiting_list_for_book_from_db(book_uuid: str) -> Result[List[User]]:
 ...
   try:
     book = session.query(Book).filter(Book.uuid == book_uuid).first()
