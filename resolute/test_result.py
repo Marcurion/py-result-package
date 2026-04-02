@@ -2,7 +2,7 @@ from pickletools import read_uint2
 
 import pytest
 import traceback
-from typing import List
+from typing import List, cast
 
 from resolute import Resolute, Result
 
@@ -16,15 +16,16 @@ def results_in_float() -> Result[float]:
     # Else continue with business logic
     return Resolute.type_adjusted(int_result, lambda value: float(str(value))) # Lamda needs to consider possibility of None value
 
-def results_in_none() -> Resolute[None]:
+def results_in_none() -> Result[None]:
     return Resolute.from_value(None)
 
-def results_in_list() -> Resolute[List[int]]:
+def results_in_list() -> Result[List[int]]:
     listing = [1,2,3]
     return Resolute.from_value(listing)
 
 def test_init():
-    success_with_value : Resolute[str] = Resolute.from_value("Hello")  # type: ignore
+    from resolute import Result
+    success_with_value : Resolute[str] = Resolute.from_value("Hello")
 
     assert success_with_value.value == "Hello"
     assert success_with_value.has_value == True
@@ -32,7 +33,7 @@ def test_init():
     assert success_with_value.value_is_of_type(str) == True
     assert success_with_value.is_success == True
 
-    failure : Resolute[str] = Resolute.from_error("My error message")  # type: ignore
+    failure : Resolute[str] = Resolute.from_error("My error message")
     assert failure.has_value == False
     assert failure.has_errors == True
     assert len(failure.errors) == 1
@@ -79,7 +80,7 @@ def test_init():
     assert results_in_none()._type == type(None)
 
     # success_with_value.value = 2 # TODO: Setter for value
-    success_without_value = Resolute.from_success_with_no_value() # same as Result.from_value(None)
+    success_without_value: Result = Resolute.from_success_with_no_value() # same as Result.from_value(None)
     assert success_without_value.has_value == False
     assert success_without_value.has_errors == False
     assert success_without_value.value is None
@@ -87,12 +88,13 @@ def test_init():
 
     assert results_in_list().is_success == True
     assert results_in_list().has_value == True
-    assert len(results_in_list().value) == 3
-    assert results_in_list().value[1] == 2
+    assert len(cast(list, results_in_list().value)) == 3
+    assert cast(list,results_in_list().value)[1] == 2
     #assert results_in_list().value_is_of_type(List[int]) == True # Generic types are flattened at runtime
     assert results_in_list().value_is_of_type(List) == True
 
-    failure_collection = [Resolute.from_error("Err1"), Resolute.from_error(ValueError("Incorrect Value")), Resolute.from_errors(["Err2", "Err3", ZeroDivisionError()])]
+
+    failure_collection: list[Result] = [Resolute.from_error("Err1"), Resolute.from_error(ValueError("Incorrect Value")), Resolute.from_errors(["Err2", "Err3", ZeroDivisionError()])]
     assert Resolute.any_erroneous_in_list(failure_collection)
     failure_from_collection = Resolute.from_erroneous_list(failure_collection)
     assert failure_from_collection.has_value == False
@@ -110,7 +112,7 @@ def test_init():
         1 / 0
     except:
         #traceback.print_exc()
-        converted_exception = Resolute.from_error(traceback.format_exc())
+        converted_exception: Result = Resolute.from_error(traceback.format_exc())
         assert len(converted_exception.concat_errors()) > 25 # Has exception details
 
     from resolute import Result, has_errors, is_success, Success
@@ -161,7 +163,7 @@ def test_async_map():
 # --- map_err ---
 
 def test_map_err():
-    result = Resolute.from_error("low-level error").map_err(lambda es: [f"domain: {es[0]}"])
+    result: Result = Resolute.from_error("low-level error").map_err(lambda es: [f"domain: {es[0]}"])
     assert result.errors == ["domain: low-level error"]
     assert Resolute.from_value(1).map_err(lambda es: ["x"]).value == 1
 
@@ -169,7 +171,7 @@ def test_map_err():
 # --- and_then ---
 
 def test_and_then():
-    def parse_int(s: str) -> Resolute:
+    def parse_int(s: str) -> Result:
         try:
             return Resolute.from_value(int(s))
         except ValueError as e:
@@ -183,7 +185,7 @@ def test_and_then():
 # --- async_and_then ---
 
 def test_async_and_then():
-    async def fetch_user(user_id: int) -> Resolute:
+    async def fetch_user(user_id: int) -> Result[str]:
         if user_id > 0:
             return Resolute.from_value(f"user:{user_id}")
         return Resolute.from_error("invalid id")
@@ -228,7 +230,7 @@ def test_unwrap_or_else():
 # --- async_unwrap_or_else ---
 
 def test_async_unwrap_or_else():
-    async def fetch_default(errors: list) -> int:
+    async def fetch_default(errors: list[Exception | str]) -> int:
         return -1
 
     async def run():
@@ -241,23 +243,23 @@ def test_async_unwrap_or_else():
 # --- inspect / inspect_err ---
 
 def test_inspect():
-    log = []
+    log: list[int]= []
     result = Resolute.from_value(7).inspect(lambda v: log.append(v))
     assert log == [7]
     assert result.value == 7
 
-    log = []
-    result = Resolute.from_error("e").inspect_err(lambda es: log.extend(es))
-    assert log == ["e"]
+    log2: list[Exception | str] = []
+    result = Resolute.from_error("e").inspect_err(lambda es: log2.extend(es))
+    assert log2 == ["e"]
     assert result.has_errors
 
-    log = []
-    Resolute.from_error("e").inspect(lambda v: log.append(v))
-    assert log == []
+    log3: list[Exception | str] = []
+    Resolute.from_error("e").inspect(lambda v: log3.append(v))
+    assert log3 == []
 
-    log = []
-    Resolute.from_value(1).inspect_err(lambda es: log.extend(es))
-    assert log == []
+    log4: list[Exception | str]= []
+    Resolute.from_value(1).inspect_err(lambda es: log4.extend(es))
+    assert log4 == []
 
 
 # --- filter ---
