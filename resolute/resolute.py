@@ -127,19 +127,19 @@ class Resolute(Generic[T]):
             return on_success(self._value)  # type: ignore[arg-type]
         return on_failure(self._errors)
 
-    def unwrap_or(self, default: T) -> T:
+    def unwrap_or(self, default: U) -> "T | U":
         """Return the value on success, or a static default on failure."""
         if self._success:
             return self._value  # type: ignore[return-value]
         return default
 
-    def unwrap_or_else(self, fn: Callable[[List[Union[Exception, str]]], T]) -> T:
+    def unwrap_or_else(self, fn: Callable[[List[Union[Exception, str]]], U]) -> "T | U":
         """Return the value on success, or compute a fallback from the errors (lazy)."""
         if self._success:
             return self._value  # type: ignore[return-value]
         return fn(self._errors)
 
-    async def async_unwrap_or_else(self, fn: Callable[[List[Union[Exception, str]]], Awaitable[T]]) -> T:
+    async def async_unwrap_or_else(self, fn: Callable[[List[Union[Exception, str]]], Awaitable[U]]) -> "T | U":
         """Async variant of unwrap_or_else."""
         if self._success:
             return self._value  # type: ignore[return-value]
