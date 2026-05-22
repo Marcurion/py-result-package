@@ -4,7 +4,7 @@ import pytest
 import traceback
 from typing import List, cast
 
-from resolute import Resolute, Result
+from resolute import Resolute, Result, Success, Failure
 
 def results_in_int() -> Result[int]:
     res : Result[int] = Resolute.from_value(1)
@@ -211,6 +211,56 @@ def test_fold():
 
     msg = Resolute.from_error("oops").fold(lambda es: f"failed:{es[0]}", lambda v: "ok")
     assert msg == "failed:oops"
+
+
+# --- async_fold ---
+
+def test_async_fold():
+    async def on_success(v: int) -> str:
+        return f"ok:{v}"
+
+    async def on_failure(es: list[Exception | str]) -> str:
+        return f"failed:{es[0]}"
+
+    async def run():
+        assert (await Resolute.from_value(5).async_fold(on_failure, on_success)) == "ok:5"
+        assert (await Resolute.from_error("oops").async_fold(on_failure, on_success)) == "failed:oops"
+
+    asyncio.run(run())
+
+
+# --- switch ---
+
+def test_switch():
+    success = Resolute.from_value(5)
+    result = success.switch(
+        on_failure=lambda r: f"failed:{r.errors[0]}",
+        on_success=lambda r: f"ok:{r.value}",
+    )
+    assert result == "ok:5"
+
+    failure = Resolute.from_error("oops")
+    result = failure.switch(
+        on_failure=lambda r: f"failed:{r.errors[0]}",
+        on_success=lambda r: f"ok:{r.value}",
+    )
+    assert result == "failed:oops"
+
+
+# --- async_switch ---
+
+def test_async_switch():
+    async def on_success(r: Success) -> str:
+        return f"ok:{r.value}"
+
+    async def on_failure(r: Failure) -> str:
+        return f"failed:{r.errors[0]}"
+
+    async def run():
+        assert (await Resolute.from_value(5).async_switch(on_failure, on_success)) == "ok:5"
+        assert (await Resolute.from_error("oops").async_switch(on_failure, on_success)) == "failed:oops"
+
+    asyncio.run(run())
 
 
 # --- unwrap_or ---

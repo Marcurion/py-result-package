@@ -83,10 +83,34 @@ class Resolute(Generic[T]):
 
     # -------------------------------------------------------------------------
     # Functional programming methods
+    #
+    # Quick reference — what does each callback receive?
+    #
+    #  RECEIVES UNWRAPPED VALUE / ERRORS       RECEIVES THE Result ITSELF
+    #  ─────────────────────────────────       ──────────────────────────
+    #  map(fn)          → fn(T)                inspect(fn)     → fn(T)   *side-effect only
+    #  async_map(fn)    → fn(T)                inspect_err(fn) → fn(errs)*side-effect only
+    #  map_err(fn)      → fn(List[err])        switch(…)       → fn(Success[T] | Failure[T])
+    #  and_then(fn)     → fn(T)                async_switch(…) → fn(Success[T] | Failure[T])
+    #  async_and_then   → fn(T)
+    #  fold(…)          → on_success(T)
+    #                     on_failure(List[err])
+    #  async_fold(…)    → on_success(T)
+    #                     on_failure(List[err])
+    #  unwrap_or(x)     → returns T or default (no callback)
+    #  unwrap_or_else   → fn(List[err])
+    #  filter(pred)     → pred(T)
     # -------------------------------------------------------------------------
 
     def map(self, fn: Callable[[T], U]) -> "Success[U] | Failure[U]":
-        """Transform the success value; pass failures through unchanged."""
+        """Transform the success value; skip and propagate a Failure unchanged.
+
+        Callback receives: the unwrapped value T.
+        Returns:           a new Result wrapping the transformed value, or the
+                           original Failure (or a new Failure if fn raises).
+        Use when:          you want to transform the happy-path value while
+                           staying in the Result pipeline.
+        """
         if not self._success:
             return self  # type: ignore[return-value]
         try:
@@ -95,7 +119,7 @@ class Resolute(Generic[T]):
             return Resolute.from_error(e)
 
     async def async_map(self, fn: Callable[[T], Awaitable[U]]) -> "Success[U] | Failure[U]":
-        """Async variant of map."""
+        """Async variant of map — callback receives the unwrapped value T."""
         if not self._success:
             return self  # type: ignore[return-value]
         try:
@@ -104,61 +128,150 @@ class Resolute(Generic[T]):
             return Resolute.from_error(e)
 
     def map_err(self, fn: Callable[[List[Union[Exception, str]]], List[Union[Exception, str]]]) -> "Success[T] | Failure[T]":
-        """Transform the error list; pass successes through unchanged."""
+        """Transform the error list; skip and propagate a Success unchanged.
+
+        Callback receives: the unwrapped error list List[Exception | str].
+        Returns:           a new Failure with the transformed errors, or the
+                           original Success.
+        Use when:          you need to rewrite, redact, or enrich error messages
+                           before they leave the pipeline.
+        """
         if self._success:
             return self  # type: ignore[return-value]
         return Resolute.from_errors(fn(self._errors))
 
     def and_then(self, fn: Callable[[T], "Success[U] | Failure[U]"]) -> "Success[U] | Failure[U]":
-        """Chain a fallible operation (flatmap); pass failures through unchanged."""
+        """Chain a fallible operation (flatmap); skip and propagate a Failure unchanged.
+
+        Callback receives: the unwrapped value T.
+        Returns:           whatever Result fn returns, or the original Failure.
+        Use when:          the next step can itself fail and must return a Result
+                           (as opposed to map, where fn returns a plain value).
+        """
         if not self._success:
             return self  # type: ignore[return-value]
         return fn(self._value)  # type: ignore[arg-type]
 
     async def async_and_then(self, fn: Callable[[T], Awaitable["Success[U] | Failure[U]"]]) -> "Success[U] | Failure[U]":
-        """Async variant of and_then."""
+        """Async variant of and_then — callback receives the unwrapped value T."""
         if not self._success:
             return self  # type: ignore[return-value]
         return await fn(self._value)  # type: ignore[arg-type]
 
     def fold(self, on_failure: Callable[[List[Union[Exception, str]]], U], on_success: Callable[[T], U]) -> U:
-        """Terminal operation: consume the result by providing handlers for both branches."""
+        """Terminal operation: exit the Result pipeline by handling both branches.
+
+        Callbacks receive: on_success gets the unwrapped value T;
+                           on_failure gets the unwrapped error list List[Exception | str].
+        Returns:           a plain value U — the Result wrapper is consumed.
+        Use when:          you are done chaining and need a final result; both
+                           callbacks work with raw values, not Result objects.
+        See also:          switch() if you need the full Result in the callback.
+        """
         if self._success:
             return on_success(self._value)  # type: ignore[arg-type]
         return on_failure(self._errors)
 
+    async def async_fold(self, on_failure: Callable[[List[Union[Exception, str]]], Awaitable[U]], on_success: Callable[[T], Awaitable[U]]) -> U:
+        """Async variant of fold.
+
+        Callbacks receive: on_success gets the unwrapped value T;
+                           on_failure gets the unwrapped error list List[Exception | str].
+        Use when:          same as fold, but the handler needs to await I/O
+                           (e.g. persisting to a DB, emitting a metric).
+        """
+        if self._success:
+            return await on_success(self._value)  # type: ignore[arg-type]
+        return await on_failure(self._errors)
+
+    def switch(self, on_failure: Callable[["Failure[T]"], U], on_success: Callable[["Success[T]"], U]) -> U:
+        """Terminal operation: route the Result itself to one of two handlers.
+
+        Callbacks receive: on_success gets the full Success[T] instance;
+                           on_failure gets the full Failure[T] instance.
+        Returns:           a plain value U — the Result wrapper is consumed.
+        Use when:          you need access to Result methods (.errors, .value,
+                           .concat_errors(), etc.) inside the handler, or you
+                           want to forward the whole Result to another component.
+        See also:          fold() if you only need the unwrapped value / errors.
+        """
+        if self._success:
+            return on_success(self)  # type: ignore[arg-type]
+        return on_failure(self)  # type: ignore[arg-type]
+
+    async def async_switch(self, on_failure: Callable[["Failure[T]"], Awaitable[U]], on_success: Callable[["Success[T]"], Awaitable[U]]) -> U:
+        """Async variant of switch.
+
+        Callbacks receive: on_success gets the full Success[T] instance;
+                           on_failure gets the full Failure[T] instance.
+        Use when:          same as switch, but the handler needs to await I/O.
+        """
+        if self._success:
+            return await on_success(self)  # type: ignore[arg-type]
+        return await on_failure(self)  # type: ignore[arg-type]
+
     def unwrap_or(self, default: U) -> "T | U":
-        """Return the value on success, or a static default on failure."""
+        """Return the unwrapped value on success, or a static default on failure.
+
+        No callback — the fallback is a plain value, evaluated eagerly.
+        Use when:          failure is expected and a constant sentinel is enough.
+        See also:          unwrap_or_else() for a lazily-computed fallback.
+        """
         if self._success:
             return self._value  # type: ignore[return-value]
         return default
 
     def unwrap_or_else(self, fn: Callable[[List[Union[Exception, str]]], U]) -> "T | U":
-        """Return the value on success, or compute a fallback from the errors (lazy)."""
+        """Return the unwrapped value on success, or compute a fallback from the errors.
+
+        Callback receives: the unwrapped error list List[Exception | str].
+        Returns:           the unwrapped value T, or whatever fn returns.
+        Use when:          the fallback depends on which errors occurred, or is
+                           expensive to compute (lazy evaluation).
+        """
         if self._success:
             return self._value  # type: ignore[return-value]
         return fn(self._errors)
 
     async def async_unwrap_or_else(self, fn: Callable[[List[Union[Exception, str]]], Awaitable[U]]) -> "T | U":
-        """Async variant of unwrap_or_else."""
+        """Async variant of unwrap_or_else — callback receives the unwrapped error list."""
         if self._success:
             return self._value  # type: ignore[return-value]
         return await fn(self._errors)
 
     def inspect(self, fn: Callable[[T], None]) -> "Success[T] | Failure[T]":
-        """Call fn(value) for side effects on success; always return self."""
+        """Call fn for a side effect on success; always return self unchanged.
+
+        Callback receives: the unwrapped value T.
+        Returns:           self — the Result is not consumed or modified.
+        Use when:          you want to log or observe the value mid-pipeline
+                           without leaving the chain (e.g. before and_then).
+        """
         if self._success:
             fn(self._value)  # type: ignore[arg-type]
         return self  # type: ignore[return-value]
 
     def inspect_err(self, fn: Callable[[List[Union[Exception, str]]], None]) -> "Success[T] | Failure[T]":
-        """Call fn(errors) for side effects on failure; always return self."""
+        """Call fn for a side effect on failure; always return self unchanged.
+
+        Callback receives: the unwrapped error list List[Exception | str].
+        Returns:           self — the Result is not consumed or modified.
+        Use when:          you want to log or observe errors mid-pipeline
+                           without leaving the chain.
+        """
         if not self._success:
             fn(self._errors)
         return self  # type: ignore[return-value]
 
     def filter(self, predicate: Callable[[T], bool], error: Union[Exception, str]) -> "Success[T] | Failure[T]":
-        """Conditionally fail a success if the predicate returns False."""
+        """Conditionally fail a success if the predicate returns False.
+
+        Callback receives: the unwrapped value T.
+        Returns:           self if the predicate passes, or a new Failure carrying
+                           error if it fails; a Failure is always propagated unchanged.
+        Use when:          you need to add a validation step inside the pipeline
+                           that can turn a success into a failure.
+        """
         if not self._success:
             return self  # type: ignore[return-value]
         if predicate(self._value):  # type: ignore[arg-type]
@@ -166,7 +279,7 @@ class Resolute(Generic[T]):
         return Resolute.from_error(error)
 
     async def async_filter(self, predicate: Callable[[T], Awaitable[bool]], error: Union[Exception, str]) -> "Success[T] | Failure[T]":
-        """Async variant of filter."""
+        """Async variant of filter — predicate receives the unwrapped value T."""
         if not self._success:
             return self  # type: ignore[return-value]
         if await predicate(self._value):  # type: ignore[arg-type]
