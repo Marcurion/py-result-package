@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: resolute
-Version: 1.2.0
+Version: 1.3.0
 Summary: Implementation of the Result pattern similar to C# ErrorOr package
 Home-page: https://github.com/Marcurion/py-result-package
 Author: Marcurion
@@ -172,7 +172,7 @@ More complex example from a layered architecture:
 ...
 # Presentation layer
 earliest_book_availability_res: Result[datetime] = reservation_service.calculate_book_availability(book_uuid)
-if earliest_book_availability_res.has_errors: modal_manager.ShowError(earliest_book_availability_res.concat_errors())
+if earliest_book_availability_res.has_errors: modal_manager.ShowError(earliest_book_availability_res.remove_errors_except_of_type([UserVisibleError]).concat_errors("\n"))
 ...
 ...
 # Application layer
